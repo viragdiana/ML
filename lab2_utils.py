@@ -1,4 +1,14 @@
 # lab2_utils.py — shared data preparation for Lab 2
+
+
+ENGINEERED_FEATURES = [
+    "HouseAge",
+    "YearsSinceRemodel",
+    "WasRemodeled",
+    "TotalArea",
+    "TotalBathrooms"
+]
+
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -36,12 +46,63 @@ def encode_features(df):
     return pd.get_dummies(X, columns=cat_cols, dtype=int)
 
 
-def get_data(path="data/AmesHousing.csv"):
+def get_data(path="data/AmesHousing.csv", engineered_features=None):
     """X (features) and y (classes 0-5), ready for XGBoost."""
     df = clean_data(load_data(path))
-    return encode_features(df), make_target(df)
 
+    if engineered_features:
+        df = add_engineered_features(df, engineered_features)
+
+    return encode_features(df), make_target(df)
 
 def get_split(X, y, test_size=0.2):
     """The fixed train/test split everyone uses (stratified, random_state=42)."""
     return train_test_split(X, y, test_size=test_size, stratify=y, random_state=42)
+
+
+def add_engineered_features(df, selected_features=None):
+    """Add selected engineered features from Lab 1."""
+    df = df.copy()
+
+    if selected_features is None:
+        selected_features = ENGINEERED_FEATURES
+
+    unknown = set(selected_features) - set(ENGINEERED_FEATURES)
+    if unknown:
+        raise ValueError(f"Unknown engineered features: {unknown}")
+
+    # Correct the 1950 artefact for houses built before 1950
+    artefact = (
+        (df["Year Built"] < 1950) &
+        (df["Year Remod/Add"] == 1950)
+    )
+
+    engineered = {
+        "HouseAge": (
+            df["Yr Sold"] - df["Year Built"]
+        ).clip(lower=0),
+
+        "YearsSinceRemodel": (
+            df["Yr Sold"] - df["Year Remod/Add"]
+        ).clip(lower=0),
+
+        "WasRemodeled": (
+            (df["Year Remod/Add"] > df["Year Built"]) &
+            ~artefact
+        ).astype(int),
+
+        "TotalArea": (
+            df["Gr Liv Area"] + df["Total Bsmt SF"]
+        ),
+
+        "TotalBathrooms": (
+            df["Full Bath"]
+            + df["Bsmt Full Bath"]
+            + 0.5 * (df["Half Bath"] + df["Bsmt Half Bath"])
+        )
+    }
+
+    for feature in selected_features:
+        df[feature] = engineered[feature]
+
+    return df
